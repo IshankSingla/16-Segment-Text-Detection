@@ -9,13 +9,24 @@ It does NOT use:
     - CHARACTER_SEGMENTS
     - Hamming distance
 
-It uses image similarity instead.
+It uses image similarity.
+
+Phase 1 improvements:
+    - Supports any number of BMP frames.
+    - Automatically calibrates character-cell positions.
+    - Uses the same geometry as Method 1.
+    - Loads templates generated from the current dataset.
 """
+
 
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+from segment_decoder import (
+    calibrate_cell_starts,
+)
 
 
 # ============================================================
@@ -36,22 +47,6 @@ TEMPLATE_DIR = (
 # ============================================================
 # DISPLAY GEOMETRY
 # ============================================================
-
-CELL_STARTS = [
-    18,
-    80,
-    141,
-    202,
-    264,
-    326,
-    387,
-    448,
-    510,
-    572,
-    633,
-    694,
-    756,
-]
 
 CELL_WIDTH = 55
 CELL_HEIGHT = 86
@@ -86,7 +81,9 @@ def create_display_mask(image):
     mask = (
         (saturation > 80)
         & (value > 80)
-    ).astype(np.uint8) * 255
+    ).astype(
+        np.uint8
+    ) * 255
 
     return mask
 
@@ -200,10 +197,11 @@ def extract_cell(
     cell_x,
 ):
     """
-    Extract one character cell.
+    Extract one character cell using the
+    automatically calibrated cell position.
     """
 
-    x1 = int(cell_x)
+    x1 = int(round(cell_x))
 
     x2 = min(
         x1 + CELL_WIDTH,
@@ -307,7 +305,6 @@ def decode_character(
         )
 
     best_character = "?"
-
     best_similarity = -1.0
 
     for character, template in (
@@ -340,10 +337,12 @@ def decode_character(
 def decode_frame(
     image,
     templates,
+    cell_starts,
     min_similarity=0.65,
 ):
     """
-    Decode all 13 character positions in a frame.
+    Decode all calibrated character positions
+    in one frame.
     """
 
     mask = create_display_mask(
@@ -354,7 +353,7 @@ def decode_frame(
 
     confidences = []
 
-    for cell_x in CELL_STARTS:
+    for cell_x in cell_starts:
 
         cell = extract_cell(
             mask,
@@ -439,14 +438,16 @@ def main():
     print(
         "Characters:",
         " ".join(
-            sorted(templates.keys())
+            sorted(
+                templates.keys()
+            )
         ),
     )
 
     print()
 
     # --------------------------------------------------------
-    # Load frames.
+    # Load current dataset.
     # --------------------------------------------------------
 
     images = sorted(
@@ -462,6 +463,25 @@ def main():
 
     print(
         f"Found {len(images)} frames."
+    )
+
+    print()
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # Calibrate the current dataset.
+    #
+    # This must be identical to the calibration used
+    # when the templates were created.
+    # --------------------------------------------------------
+
+    cell_starts = calibrate_cell_starts(
+        images
+    )
+
+    print(
+        f"Using {len(cell_starts)} "
+        f"calibrated character cells."
     )
 
     print()
@@ -486,6 +506,7 @@ def main():
             decode_frame(
                 image,
                 templates,
+                cell_starts,
             )
         )
 
