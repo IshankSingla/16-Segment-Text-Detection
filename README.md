@@ -1,295 +1,230 @@
-# HIL Test Automation – Needle Gauge & 16-Segment Display
+# HIL Test Automation – Task 2: 16-Segment Display Text Detection
 
 ## Overview
 
-This project implements computer-vision-based solutions for two HIL (Hardware-in-the-Loop) test automation tasks:
+This project implements a computer vision-based solution for detecting and decoding text displayed on a **16-segment display**.
 
-1. **Needle Gauge Detection**
-2. **16-Segment Display Text Detection**
+The input consists of a sequence of image frames containing text displayed on the segmented display. The system processes the images and converts the illuminated segments into readable characters.
 
-The solutions are implemented primarily using **Python**, **OpenCV**, and **NumPy**.
+The project implements multiple approaches for text detection and also determines the time duration for which a specific message is displayed.
 
-The project evaluates multiple computer vision approaches for recognizing text from a scrolling 16-segment display and compares their practical performance on the supplied image dataset.
-
----
-
-## Task 1 – Needle Gauge Detection
-
-### Objective
-
-The objective is to accurately detect the position of a gauge needle from five supplied images.
-
-The reference values provided in the dataset are:
-
-| Image | Expected Value |
-|---|---:|
-| `1.59592113294115.jpg` | 0 |
-| `895.590073713866.jpg` | 900 |
-| `1463.jpg` | 1500 |
-| `1880.jpg` | 1900 |
-| `2984.jpg` | 3000 |
-
-### Approach
-
-The needle is detected using image processing techniques in OpenCV.
-
-**Processing steps:**
-
-1. Load the gauge image.
-2. Convert the image from BGR to HSV color space.
-3. Create a mask for the colored needle.
-4. Apply morphological processing to reduce noise.
-5. Detect line candidates using the Probabilistic Hough Line Transform.
-6. Identify the line corresponding to the needle using its relationship to the gauge pivot.
-7. Calculate the needle angle relative to the vertical axis.
-8. Convert the detected angle into the gauge value using piecewise-linear calibration.
-
-The gauge pivot is approximately located at:
+**Target Message**
 
 ```
-(505, 360)
-```
-
-The angle convention used by the implementation is:
-
-- `0°` = 12 o'clock
-- Angle increases clockwise
-
-### Results
-
-The implementation correctly detects all five reference values:
-
-| Expected | Detected |
-|---:|---:|
-| 0 | 0 |
-| 900 | 900 |
-| 1500 | 1500 |
-| 1900 | 1900 |
-| 3000 | 3000 |
-
-The detected results are also saved as annotated images in:
-
-```
-outputs/needle_gauge/
+AIR FILTER IS BLOCKED
 ```
 
 ---
 
-## Task 2 – 16-Segment Display Text Detection
+## Task Description
 
-### Objective
+The task consists of detecting text from images of a 16-segment display.
 
-The second task contains 103 BMP images showing a scrolling 16-segment display.
+The requirements are:
 
-The objective is to:
-
-1. Identify three possible methods for detecting the displayed text.
+1. Identify at least three possible methods for accurately detecting the displayed text.
 2. Implement at least two methods using custom code.
-3. Determine when the message **"AIR FILTER IS BLOCKED"** is displayed.
-
-### Dataset
-
-The supplied dataset contains **103 BMP images**.
-
-Each image has a scrolling 16-segment display. The sequence contains three messages:
-
-- `WATER IN FLUE`
-- `AIR FILTER IS BLOCKED`
-- `PLEASE CONTACT JCB DEALER`
-
-...followed by another occurrence of:
-
-- `WATER IN FLUE`
+3. Process the given image sequence.
+4. Decode the characters displayed on the 16-segment display.
+5. Determine when the target message appears and calculate its display duration.
 
 ---
+
+## Implemented Methods
 
 ### Method 1 – 16-Segment Pattern Recognition
 
-**Description**
+The first method uses the structure of the 16-segment display directly.
 
-The first approach directly models the structure of the 16-segment display. Each character cell is divided according to the known 16-segment geometry. The implementation determines which segments are illuminated and maps the resulting segment pattern to a character.
+Each character is represented using a predefined combination of illuminated segments, for example:
 
-The decoder contains predefined segment patterns for the characters present in the supplied dataset.
+```
+A → specific segment combination
+B → specific segment combination
+C → specific segment combination
+...
+Z → specific segment combination
+```
 
-**Processing Steps**
+**The system:**
 
-1. Convert the image to HSV color space.
-2. Detect illuminated display pixels.
-3. Divide the display into character cells.
-4. Sample the predefined 16 segment locations.
-5. Determine which segments are active.
-6. Convert the segment pattern into a character.
-7. Combine recognized characters from all display cells.
+1. Loads an input image.
+2. Detects the illuminated display region.
+3. Automatically determines the character-cell positions.
+4. Divides the display into individual character cells.
+5. Samples the predefined 16 segment locations.
+6. Determines whether each segment is ON or OFF.
+7. Creates a binary segment pattern.
+8. Compares the pattern with predefined character patterns.
+9. Selects the character with the closest matching pattern.
+10. Combines the detected characters to produce the complete text.
 
 **Advantages**
 
-- Uses the known physical structure of the 16-segment display
-- Does not require a machine learning model
-- Does not depend on general-purpose OCR
-- Provides consistent results on the supplied dataset
-- Uses custom computer vision code
-
-**Implementation:** `src/segment_decoder.py`
+- Does not require an external OCR API
+- Works directly with the known 16-segment hardware
+- Fast and lightweight
+- Can work with characters that are not present in the training images, if their segment pattern is defined
 
 ---
 
-### Method 2 – Character Template Matching
+### Method 2 – Template Matching
 
-**Description**
+The second method uses image templates generated from the input dataset.
 
-The second approach uses image templates instead of explicitly decoding the individual 16-segment states.
+The template-building process first uses Method 1 to identify characters and extracts good-quality examples of those characters.
 
-Character templates are generated from reliable examples in the supplied dataset. The implementation creates templates for the 18 characters used by the dataset:
-
-`A B C D E F I J K L N O P R S T U W`
-
-Each character is normalized and resized before comparison.
-
-**Processing Steps**
-
-1. Detect the illuminated display region.
-2. Divide the display into character cells.
-3. Extract the character image.
-4. Normalize the character using its bounding box.
-5. Resize the normalized character to a common size.
-6. Compare it against the stored character templates.
-7. Select the template with the highest similarity.
-8. Combine recognized characters to reconstruct the scrolling text.
-
-**Template Generation**
-
-Templates are generated using:
+The extracted characters (for the corresponding dataset) are:
 
 ```
-src/build_character_templates.py
+C  D  E  G  I  N  O  S  U
 ```
 
-The generated templates are stored in:
+The templates are stored inside `outputs/templates/`:
 
 ```
-outputs/templates/
+outputs/
+└── templates/
+    ├── C.png
+    ├── D.png
+    ├── E.png
+    ├── G.png
+    ├── I.png
+    ├── N.png
+    ├── O.png
+    ├── S.png
+    └── U.png
 ```
 
-All 18 required character templates were successfully generated.
+**For every new character cell:**
 
-**Recognition**
+1. The character image is extracted.
+2. The image is normalized.
+3. The character is resized to a common size.
+4. It is compared against all available templates.
+5. A similarity score is calculated.
+6. The template with the highest similarity is selected.
 
-The template-matching decoder is implemented in:
+**Advantages**
 
-```
-src/template_decoder.py
-```
-
-**Result**
-
-The method successfully follows the scrolling target message across frames 18–40.
-
-Examples of the decoded sequence include:
-
-```
-Frame 018: A
-Frame 019: AI
-Frame 020: AIR
-...
-Frame 028: AIR FILTER
-...
-Frame 031: AIR FILTER IS
-...
-Frame 039: ER IS BLOCKED
-Frame 040: ER IS BLOCKED
-Frame 041: (blank)
-```
-
-Because the message is scrolling, the entire message does not appear in one frame. Different portions of the message enter and leave the display over time.
+- Simple and fast
+- Does not require a machine-learning model
+- Templates can be rebuilt automatically for a new dataset
+- Useful when the display appearance remains consistent
 
 ---
 
-### Method 3 – Contour and Shape-Based Recognition
+### Method 3 – OCR-Based Detection
 
-**Description**
+A third possible approach is to use an OCR system such as:
 
-The third approach uses contour-based computer vision. Instead of explicitly identifying the 16 individual segments, this method extracts geometric and spatial characteristics from each character cell.
+- Tesseract OCR
+- EasyOCR
+- PaddleOCR
 
-Multiple reference prototypes are created for the characters, and new character cells are compared against these prototypes.
+The image would first be preprocessed and then passed to the OCR engine.
 
-**Features Used**
-
-The character descriptor includes:
-
-- Aspect ratio
-- Fill ratio
-- Number of contours
-- Largest contour area ratio
-- Character center position
-- Active pixel density
-- Spatial pixel distribution using a grid
-
-**Processing Steps**
-
-1. Create an illuminated-pixel mask.
-2. Extract individual display cells.
-3. Detect contours within each cell.
-4. Calculate geometric features.
-5. Calculate spatial pixel-density features.
-6. Compare the descriptor with reference prototypes.
-7. Select the closest character prototype.
-
-**Implementation:** `src/contour_decoder.py`
-
-**Evaluation**
-
-The contour-based approach successfully processed all 103 frames and detected the beginning of the target message at frame 18.
-
-However, it produced more character substitutions than the first two approaches. Examples include:
-
-```
-Frame 028: AIRFIAETA
-Frame 031: SIRFIATEAIS
-Frame 039: ERISBACCKTD
-```
-
-Therefore, this approach is considered less reliable for the supplied 16-segment scrolling display than the direct segment-pattern and template-matching approaches. It is included as a third evaluated computer vision method.
+> Standard OCR is **not** the primary approach in this project because the input is a 16-segment display, where direct segment-based recognition provides more control over the character structure.
 
 ---
 
-### Optional Method – EasyOCR
+## System Architecture
 
-EasyOCR was also evaluated as a general-purpose OCR approach.
-
-**Implementation:** `src/easyocr_decoder.py`
-
-EasyOCR provides a useful comparison against the custom display-specific computer vision methods. However, general-purpose OCR is not ideally suited to this particular problem because:
-
-- The display uses 16-segment characters
-- Characters are partially visible while scrolling
-- Character shapes differ from conventional printed text
-- Characters at the edges of the display may be incomplete
-
-Therefore, the custom display-specific approaches are more suitable for this dataset.
-
-> EasyOCR is treated as an optional experiment and is not required for the main implementation.
+```
+Input BMP Images
+       |
+       v
+Image Preprocessing
+       |
+       v
+Display Mask Detection
+       |
+       v
+Automatic Display Calibration
+       |
+       v
+Character Cell Detection
+       |
+       +----------------------+
+       |                      |
+       v                      v
+   Method 1               Method 2
+16-Segment              Template
+Recognition             Matching
+       |                      |
+       v                      v
+Decoded Characters    Similarity Matching
+       |                      |
+       +----------+-----------+
+                   |
+                   v
+             Detected Text
+                   |
+                   v
+          Target Message Check
+                   |
+                   v
+           Display Duration
+```
 
 ---
 
-### Target Message Timing
+## Automatic Calibration
 
-The target message is:
+One of the important parts of the implementation is **automatic calibration**.
 
-> **AIR FILTER IS BLOCKED**
+The original image dataset used fixed character positions. However, this approach is not reliable when a new dataset has a different horizontal alignment. Therefore, the project automatically detects the character positions from the images.
 
-| Event | Frame | Timestamp |
-|---|---|---|
-| First target frame | 018 | 09:59:23.806 |
-| Last target frame | 040 | 09:59:33.523 |
-| First blank frame after message | 041 | 09:59:33.950 |
+**The calibration process:**
 
-The duration from the first visible target frame to the first blank frame after the message is:
+1. Creates a display mask.
+2. Calculates the number of active pixels for each image column.
+3. Detects active regions.
+4. Finds character centers.
+5. Estimates the distance between neighboring character centers.
+6. Calculates the display pitch.
+7. Estimates the horizontal phase.
+8. Generates character-cell start positions.
 
-**10.144 seconds**
+**Example calibration output:**
 
-### Final Result
+```
+AUTOMATIC DISPLAY CALIBRATION
 
-**"AIR FILTER IS BLOCKED"** is displayed for approximately **10.14 seconds** in the supplied image sequence.
+Frames inspected : 30
+Vertical samples : 414
+Estimated pitch  : 61.95 px
+Estimated phase  : 2.06 px
+
+Detected cells   : 13
+
+Cell starts:
+[2.06, 64.02, 125.97, 187.92, 249.87,
+ 311.81, 373.77, 435.72, 497.67,
+ 559.62, 621.57, 683.52, 745.47]
+```
+
+### Multi-Dataset Calibration
+
+The project was further improved to handle datasets where different groups of frames have different horizontal alignment.
+
+Instead of assuming that every frame has the same calibration, the system:
+
+1. Estimates the display phase for each frame.
+2. Groups frames having similar calibration.
+3. Creates calibration values for each group.
+4. Uses the appropriate calibration for each frame.
+
+This prevents the decoder from depending on a specific frame number or hardcoded dataset boundary. The system therefore **does not** use logic such as:
+
+```python
+if frame_number <= 100:
+    ...
+else:
+    ...
+```
+
+Instead, calibration is determined from the image data itself.
 
 ---
 
@@ -299,74 +234,450 @@ The duration from the first visible target frame to the first blank frame after 
 HIL-Test-Automation/
 │
 ├── data/
-│   ├── needle_gauge/
-│   │   ├── 1.59592113294115.jpg
-│   │   ├── 895.590073713866.jpg
-│   │   ├── 1463.jpg
-│   │   ├── 1880.jpg
-│   │   └── 2984.jpg
-│   │
 │   └── text/
-│       └── 103 BMP display images
+│       ├── frame_001.bmp
+│       ├── frame_002.bmp
+│       ├── ...
+│       └── frame_N.bmp
 │
 ├── outputs/
-│   ├── needle_gauge/
-│   │   └── detected gauge images
-│   │
 │   ├── templates/
-│   │   └── character templates
+│   │   ├── A.png
+│   │   ├── B.png
+│   │   └── ...
 │   │
 │   └── text/
 │       ├── preprocessed_first_frame.png
 │       └── segment_decoder_results.csv
 │
 ├── src/
-│   ├── build_character_templates.py
-│   ├── calibration.py
-│   ├── contour_decoder.py
-│   ├── easyocr_decoder.py
-│   ├── evaluate_template_decoder.py
-│   ├── main.py
-│   ├── needle_gauge.py
+│   ├── __init__.py
 │   ├── segment_decoder.py
-│   └── template_decoder.py
-│
-├── archive/
-│   └── development and analysis helper scripts
+│   ├── build_character_templates.py
+│   ├── template_decoder.py
+│   └── evaluate_template_decoder.py
 │
 ├── .gitignore
-├── README.md
-└── requirements.txt
+├── requirements.txt
+└── README.md
 ```
+
+---
+
+## Technologies Used
+
+| Category | Details |
+|---|---|
+| **Programming Language** | Python |
+| **Computer Vision** | OpenCV, NumPy |
+| **Image Processing** | HSV color space, thresholding, binary masks, contour/region analysis, image normalization, template matching |
+| **Data Processing** | CSV, file/directory processing, timestamp extraction |
+
+**Main libraries used:**
+
+```
+opencv-python
+numpy
+```
+
+**Additional Python standard libraries:**
+
+```
+pathlib
+re
+math
+csv
+dataclasses
+collections
+```
+
+---
+
+## Method 1 Workflow
+
+```
+BMP Image
+   |
+   v
+HSV Conversion
+   |
+   v
+Display Mask
+   |
+   v
+Automatic Calibration
+   |
+   v
+Character Cells
+   |
+   v
+16-Segment Sampling
+   |
+   v
+ON/OFF Segment Pattern
+   |
+   v
+Pattern Comparison
+   |
+   v
+Character
+```
+
+For each character cell, the system calculates how much of each segment is illuminated. The segment is classified as **ON** or **OFF**. The resulting 16-bit pattern is compared with the predefined segment patterns for supported characters.
+
+---
+
+## Method 2 Workflow
+
+```
+Input Image
+     |
+     v
+Display Mask
+     |
+     v
+Character Cell Extraction
+     |
+     v
+Character Normalization
+     |
+     v
+Resize
+     |
+     v
+Compare With Templates
+     |
+     v
+Similarity Score
+     |
+     v
+Best Matching Character
+```
+
+The character templates are automatically generated using detected characters from the dataset.
+
+### Character Template Generation
+
+Templates are generated using `build_character_templates.py`.
+
+**The script:**
+
+1. Loads the input images.
+2. Performs automatic calibration.
+3. Decodes frames using Method 1.
+4. Identifies characters.
+5. Extracts character images.
+6. Normalizes the characters.
+7. Evaluates candidate quality.
+8. Selects high-quality candidates.
+9. Saves them as PNG templates.
+
+**Run:**
+
+```bash
+python src/build_character_templates.py
+```
+
+---
+
+## Running the Project
+
+### Running Method 1
+
+```bash
+python src/segment_decoder.py
+```
+
+The decoder processes all BMP files inside `data/text/` and prints the detected text for each frame.
+
+**Example:**
+
+```
+Frame 001: ENGINE ECU
+Frame 019: ENGINE ECU I
+Frame 035: ENGINE ECU IS
+...
+```
+
+### Running Method 2
+
+After generating templates, run:
+
+```bash
+python src/template_decoder.py
+```
+
+The program loads the generated templates and performs template-based character recognition.
+
+### Evaluating the Target Message
+
+The target message is:
+
+```
+AIR FILTER IS BLOCKED
+```
+
+The evaluation script checks the decoded frames and identifies the period during which the target message is displayed.
+
+**Run:**
+
+```bash
+python src/evaluate_template_decoder.py
+```
+
+**The script:**
+
+1. Reads decoded frames.
+2. Extracts timestamps from filenames.
+3. Normalizes the detected text.
+4. Searches for the target message or its valid fragments.
+5. Finds the first target frame.
+6. Finds the last target frame.
+7. Calculates the time difference.
+
+---
+
+## Display Duration Calculation
+
+The duration is calculated from the timestamps in the image filenames.
+
+| Event | Timestamp |
+|---|---|
+| First detected frame | 09:59:24.661 |
+| Last detected frame | 09:59:33.523 |
+
+**Observed duration: 8.862 seconds**
+
+```
+Duration = Last Timestamp − First Timestamp
+```
+
+---
+
+## Handling New Datasets
+
+The implementation was designed to avoid depending on a specific dataset size or fixed frame positions.
+
+**The system dynamically:**
+
+- Finds BMP files
+- Detects the display area
+- Estimates character-cell positions
+- Performs calibration
+- Groups frames with different horizontal phases
+- Builds character templates from the current dataset
+- Detects characters using segment patterns
+
+Therefore, a new dataset can be placed inside `data/text/` and processed **without** changing the frame count or hardcoding frame numbers.
+
+---
+
+## What Is Configured in the Code?
+
+The project does not hardcode the actual message or frame boundaries.
+
+However, some configuration is intentionally predefined because the system is designed for a known 16-segment display hardware. These include:
+
+- 16-segment geometry
+- Segment sampling locations
+- Character-to-segment mappings
+- Basic cell dimensions
+- Image preprocessing thresholds
+- Segment detection thresholds
+
+This is different from hardcoding the dataset. For example, the system does **not** assume:
+
+```
+Frame 1–100   = Dataset 1
+Frame 101–205 = Dataset 2
+```
+
+Instead, calibration is calculated from the image data.
+
+---
+
+## Troubleshooting a New Dataset
+
+If a new dataset produces incorrect results, follow this debugging process:
+
+### 1. Check Method 1 first
+
+```bash
+python src/segment_decoder.py
+```
+
+If Method 1 is incorrect, inspect:
+
+- Calibration
+- Display mask
+- Character cell positions
+- Segment geometry
+- Character segment mappings
+- Thresholds
+
+### 2. Check calibration
+
+Look at:
+
+- Estimated pitch
+- Estimated phase
+- Detected cells
+- Cell starts
+
+If these values are incorrect, the character cells are probably being extracted from the wrong locations.
+
+### 3. Check character mapping
+
+If the segments are detected correctly but the character is wrong, verify the character's 16-segment pattern in `segment_decoder.py`.
+
+### 4. Rebuild templates
+
+If Method 1 is correct but Method 2 is incorrect:
+
+```bash
+python src/build_character_templates.py
+python src/template_decoder.py
+```
+
+### 5. Check templates
+
+Inspect `outputs/templates/`. The generated templates should contain clean representations of the detected characters.
+
+### 6. Check preprocessing
+
+If the new dataset has different brightness, color, or contrast, HSV thresholding may need adjustment.
+
+---
+
+## Challenges Faced
+
+### 1. Different Horizontal Alignment
+
+The biggest challenge was that different datasets could have different horizontal positions of the character cells. A fixed configuration such as `CELL_STARTS = [...]` worked for one dataset but failed for another.
+
+**Solution:** Automatic calibration was implemented to estimate character pitch, horizontal phase, and character-cell positions from the image data.
+
+### 2. Different Dataset Groups
+
+When multiple datasets were combined, one global calibration could work for the first dataset but fail for another.
+
+**Solution:** Multi-calibration was implemented. The system estimates the phase for individual frames and groups frames with similar calibration.
+
+### 3. Character Recognition
+
+A 16-segment display does not behave like normal printed text. Characters can have similar segment patterns, making recognition sensitive to segment position, thresholds, image quality, and display brightness.
+
+**Solution:** The segment-based method uses predefined 16-segment character patterns and similarity-based matching.
+
+### 4. Template Quality
+
+Template matching depends heavily on the quality of the generated templates. Poorly extracted characters can produce incorrect template matches.
+
+**Solution:** The template builder evaluates candidate characters and selects higher-quality samples before saving the templates.
+
+### 5. Lighting and Image Variations
+
+Changes in brightness or display intensity can affect the binary display mask.
+
+**Solution:** HSV-based preprocessing and segment illumination thresholds are used to separate illuminated display pixels from the background.
+
+---
+
+## Limitations
+
+This project is designed specifically for a known 16-segment display structure. It is **not** a general OCR system.
+
+Performance can decrease when:
+
+- The display hardware changes
+- Segment geometry changes significantly
+- Image resolution changes significantly
+- The display is heavily distorted
+- Lighting conditions are very different
+- Characters outside the supported segment mapping are introduced
+
+For a completely different display type, the segment geometry and character mappings would need to be adapted.
+
+---
+
+## Possible Improvements
+
+1. **Perspective Correction** — Use homography/perspective transformation if the display is viewed at an angle.
+2. **Automatic Segment Geometry Detection** — Instead of predefined segment coordinates, detect the segment positions automatically.
+3. **Adaptive Thresholding** — Use adaptive thresholds based on the brightness of each individual frame.
+4. **Temporal Smoothing** — Use information from neighboring frames to reduce character fluctuations. For example:
+
+   ```
+   Frame 10 → ENGINE
+   Frame 11 → ENG1NE
+   Frame 12 → ENGINE
+   ```
+
+   Temporal voting could select `ENGINE` as the final result.
+
+5. **Machine Learning** — A CNN or lightweight image classification model could be trained to classify individual 16-segment characters.
+6. **OCR Comparison** — The custom methods could be compared against Tesseract, EasyOCR, and PaddleOCR to evaluate their accuracy on the same dataset.
+
+---
+
+## Why Custom Computer Vision Was Used
+
+The project uses custom computer vision instead of relying entirely on external OCR APIs because the input is a structured 16-segment display.
+
+The display provides useful prior information:
+
+```
+16 known segments + known character patterns = direct character recognition
+```
+
+This makes the solution lightweight and explainable.
+
+---
+
+## Output
+
+The system produces decoded text for each frame. It can also generate:
+
+- `outputs/templates/` — character templates
+- `outputs/text/` — processing results
+
+The output can be used to determine:
+
+- Detected characters
+- Detected messages
+- Frame ranges
+- Target message occurrence
+- Display duration
 
 ---
 
 ## Installation
 
-### 1. Clone the Repository
+**1. Clone the repository**
 
 ```bash
-git clone <YOUR_GITHUB_REPOSITORY_URL>
+git clone https://github.com/IshankSingla/HIL-Test-Automation.git
+```
+
+**2. Move into the project**
+
+```bash
 cd HIL-Test-Automation
 ```
 
-### 2. Create a Virtual Environment
-
-**Windows:**
+**3. Create a virtual environment**
 
 ```bash
 python -m venv venv
 ```
 
-### 3. Activate the Virtual Environment
+**4. Activate it (Windows)**
 
-**PowerShell:**
-
-```powershell
-.\venv\Scripts\Activate.ps1
+```bash
+venv\Scripts\activate
 ```
 
-### 4. Install Dependencies
+**5. Install dependencies**
 
 ```bash
 pip install -r requirements.txt
@@ -374,121 +685,64 @@ pip install -r requirements.txt
 
 ---
 
-## Running the Project
+## Usage
 
-### Needle Gauge Detection
-
-From the project root:
+Place the input BMP images inside `data/text/`, then run:
 
 ```bash
-python -m src.main
-```
+# Method 1
+python src/segment_decoder.py
 
-This performs gauge calibration, detects the needle angle, calculates the gauge value, and saves annotated output images.
+# Generate templates
+python src/build_character_templates.py
 
-### Build Character Templates
+# Method 2
+python src/template_decoder.py
 
-From the project root:
-
-```bash
-python src\build_character_templates.py
-```
-
-This generates the 18 character templates in:
-
-```
-outputs/templates/
-```
-
-### Template Matching
-
-```bash
-python src\template_decoder.py
-```
-
-This loads the generated templates and decodes the 103 display frames.
-
-### Contour Recognition
-
-```bash
-python src\contour_decoder.py
-```
-
-This builds multiple character prototypes and performs contour and shape-based recognition.
-
-### EasyOCR Experiment (Optional)
-
-```bash
-python src\easyocr_decoder.py
+# Evaluate the target message
+python src/evaluate_template_decoder.py
 ```
 
 ---
 
-## Dependencies
+## Requirements
 
-**Main implementation:**
+The project requires Python and the libraries specified in `requirements.txt`.
 
-- Python
-- OpenCV
-- NumPy
+**Main dependencies:**
 
-**Optional:**
-
-- EasyOCR
-- PyTorch
-
-> The custom implementations for the needle gauge and 16-segment display do not require a trained machine learning model.
+```
+opencv-python
+numpy
+```
 
 ---
 
-## Key Results
+## Key Features
 
-### Needle Gauge
-
-All five supplied reference images were correctly detected:
-
-| Expected | Detected |
-|---:|---:|
-| 0 | 0 |
-| 900 | 900 |
-| 1500 | 1500 |
-| 1900 | 1900 |
-| 3000 | 3000 |
-
-### Text Detection
-
-The strongest approaches for the supplied display are:
-
-1. 16-segment pattern recognition
-2. Character template matching
-
-Both are implemented using custom computer vision code.
-
-The contour-based approach was also implemented and evaluated, but produced more recognition errors on the scrolling display.
-
-EasyOCR was evaluated as an additional general-purpose OCR comparison.
-
-### Target Message
-
-> **AIR FILTER IS BLOCKED**
-> Observed display duration: **Approximately 10.14 seconds**
+- 16-segment display recognition
+- Custom computer vision implementation
+- Automatic character-cell calibration
+- Multi-dataset calibration
+- Dynamic frame discovery
+- Automatic character template generation
+- Template-based character recognition
+- Timestamp-based duration calculation
+- No external OCR API required
+- No paid API key required
+- Designed for new datasets with the same display hardware
 
 ---
 
 ## Conclusion
 
-This project demonstrates multiple approaches for HIL test automation using computer vision.
+This project demonstrates a computer vision-based approach for extracting text from a 16-segment display.
 
-For the supplied datasets, display-specific approaches are more suitable than general-purpose OCR because they take advantage of the known 16-segment display structure and character appearance.
+Two custom methods were implemented:
 
-**The final recommended approaches are:**
+1. **16-Segment Pattern Recognition**
+2. **Template Matching**
 
-| Task | Recommended Approach |
-|---|---|
-| Needle Gauge | HSV masking + Hough Line Detection + calibration |
-| Text Detection – Method 1 | 16-segment pattern recognition |
-| Text Detection – Method 2 | Character template matching |
-| Text Detection – Method 3 | Contour and shape-based recognition |
-| Optional comparison | EasyOCR |
+A third possible approach is OCR-based recognition.
 
-The results demonstrate that custom computer vision techniques can provide accurate and deterministic detection for structured HIL display interfaces.
+The project also includes automatic calibration so that the solution is not dependent on fixed frame numbers or a single dataset alignment. The main focus of the implementation is to make the solution adaptable to different image sequences while maintaining the known geometry and characteristics of the 16-segment display.
