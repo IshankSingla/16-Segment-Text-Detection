@@ -667,6 +667,369 @@ def calibrate_cell_starts(
     return cell_starts
 
 
+
+# ------------------------------------------------------------
+# MULTI-DATASET / MULTI-GEOMETRY CALIBRATION
+# ------------------------------------------------------------
+
+def _detect_frame_vertical_centers(image: np.ndarray) -> list[float]:
+    """Detect strong vertical LED features in one frame."""
+    mask = create_display_mask(image)
+    projection = np.count_nonzero(mask > 0, axis=0)
+    threshold = max(20.0, mask.shape[0] * 0.45)
+    return _find_projection_peaks(projection, threshold)
+
+
+def _estimate_global_pitch(image_paths) -> float | None:
+    """Estimate the physical character pitch from all frames."""
+    all_centers = []
+
+    for image_path in image_paths:
+        image = cv2.imread(str(image_path))
+        if image is None:
+            continue
+
+        centers = _detect_frame_vertical_centers(image)
+        if len(centers) >= 2:
+            all_centers.extend(centers)
+
+    if len(all_centers) < 4:
+        return None
+
+    best_pitch = None
+    best_phase = None
+    best_count = -1
+    best_closeness = float("-inf")
+
+    for pitch in np.linspace(58.0, 65.0, 141):
+        for phase in np.linspace(0.0, pitch, 121):
+            count, closeness = _grid_fit_score(
+                all_centers, pitch, phase
+            )
+
+            if (
+                count > best_count
+                or (
+                    count == best_count
+                    and closeness > best_closeness
+                )
+            ):
+                best_count = count
+                best_closeness = closeness
+                best_pitch = pitch
+                best_phase = phase
+
+    return best_pitch
+
+
+def _estimate_frame_phase(
+    centers: list[float],
+    pitch: float,
+) -> tuple[float | None, int, float]:
+    """Estimate the horizontal grid phase for one frame."""
+
+    if len(centers) < 2:
+        return None, 0, float("-inf")
+
+    best_phase = None
+    best_count = -1
+    best_closeness = float("-inf")
+
+    for phase in np.linspace(0.0, pitch, 249):
+        count, closeness = _grid_fit_score(
+            centers, pitch, phase
+        )
+
+        if (
+            count > best_count
+            or (
+                count == best_count
+                and closeness > best_closeness
+            )
+        ):
+            best_count = count
+            best_closeness = closeness
+            best_phase = phase
+
+    if best_count < 2:
+        return None, best_count, best_closeness
+
+    return float(best_phase), best_count, best_closeness
+
+
+def _circular_phase_distance(
+    a: float,
+    b: float,
+    pitch: float,
+) -> float:
+    """Distance between two periodic phase values."""
+    difference = abs(a - b)
+    return min(difference, pitch - difference)
+
+
+def _circular_phase_mean(
+    phases: list[float],
+    pitch: float,
+) -> float:
+    """Mean phase on a circular interval."""
+    if not phases:
+        return 0.0
+
+    angles = 2.0 * np.pi * np.asarray(phases) / pitch
+    sin_mean = float(np.mean(np.sin(angles)))
+    cos_mean = float(np.mean(np.cos(angles)))
+
+    angle = math.atan2(sin_mean, cos_mean)
+
+    if angle < 0:
+        angle += 2.0 * np.pi
+
+    return angle * pitch / (2.0 * np.pi)
+
+
+def _build_cell_starts_from_phase(
+    phase: float,
+    pitch: float,
+    image_width: int,
+) -> list[float]:
+    """Create character-cell positions from a calibrated phase."""
+
+    if image_width <= 0:
+        return CELL_STARTS.copy()
+
+    cell_starts = []
+
+    index_min = int(
+        np.floor((-CELL_WIDTH - phase) / pitch)
+    )
+    index_max = int(
+        np.ceil((image_width - phase) / pitch)
+    )
+
+    for index in range(index_min, index_max + 1):
+        cell_x = phase + index * pitch
+
+        if (
+            cell_x >= 0
+            and cell_x + CELL_WIDTH <= image_width
+        ):
+            cell_starts.append(round(float(cell_x), 2))
+
+    return cell_starts
+
+
+def calibrate_multiple_cell_starts(
+    image_paths,
+    phase_tolerance: float = 6.0,
+):
+    """
+    Detect multiple horizontal display geometries automatically.
+
+    This handles a folder containing multiple datasets whose
+    character grids have different horizontal phases.
+
+    No frame-number boundary is used.
+    """
+
+    if not image_paths:
+        return {
+            "pitch": None,
+            "frame_phases": [],
+            "frame_groups": [],
+            "calibrations": {},
+            "image_width": 0,
+        }
+
+    first_image = cv2.imread(str(image_paths[0]))
+    image_width = (
+        first_image.shape[1]
+        if first_image is not None
+        else 0
+    )
+
+    print()
+    print("=" * 70)
+    print("AUTOMATIC MULTI-DATASET DISPLAY CALIBRATION")
+    print("=" * 70)
+    print(
+        "Analyzing frame geometry instead of using one "
+        "calibration for the whole folder."
+    )
+    print()
+
+    pitch = _estimate_global_pitch(image_paths)
+
+    if pitch is None:
+        print("Could not estimate display pitch.")
+        print("Falling back to original CELL_STARTS.")
+
+        return {
+            "pitch": None,
+            "frame_phases": [None] * len(image_paths),
+            "frame_groups": [0] * len(image_paths),
+            "calibrations": {0: CELL_STARTS.copy()},
+            "image_width": image_width,
+        }
+
+    print(f"Estimated global pitch : {pitch:.2f} px")
+
+    # Measure phase independently for every frame.
+    frame_phases = []
+
+    for image_path in image_paths:
+        image = cv2.imread(str(image_path))
+
+        if image is None:
+            frame_phases.append(None)
+            continue
+
+        centers = _detect_frame_vertical_centers(image)
+
+        phase, _, _ = _estimate_frame_phase(
+            centers,
+            pitch,
+        )
+
+        frame_phases.append(phase)
+
+    valid_phases = [
+        phase for phase in frame_phases
+        if phase is not None
+    ]
+
+    if not valid_phases:
+        print("No reliable frame phases detected.")
+        print("Falling back to original CELL_STARTS.")
+
+        return {
+            "pitch": pitch,
+            "frame_phases": frame_phases,
+            "frame_groups": [0] * len(image_paths),
+            "calibrations": {0: CELL_STARTS.copy()},
+            "image_width": image_width,
+        }
+
+    # Cluster measured phases. The clusters are based on geometry,
+    # not on frame numbers.
+    groups = []
+
+    for phase in valid_phases:
+        assigned = False
+
+        for group in groups:
+            distance = _circular_phase_distance(
+                phase,
+                group["phase"],
+                pitch,
+            )
+
+            if distance <= phase_tolerance:
+                group["phases"].append(phase)
+                group["phase"] = _circular_phase_mean(
+                    group["phases"],
+                    pitch,
+                )
+                assigned = True
+                break
+
+        if not assigned:
+            groups.append({
+                "phase": phase,
+                "phases": [phase],
+            })
+
+    groups.sort(
+        key=lambda group: len(group["phases"]),
+        reverse=True,
+    )
+
+    group_phases = [
+        group["phase"] for group in groups
+    ]
+
+    frame_groups = []
+
+    for phase in frame_phases:
+        if phase is None:
+            frame_groups.append(None)
+            continue
+
+        distances = [
+            _circular_phase_distance(
+                phase,
+                group_phase,
+                pitch,
+            )
+            for group_phase in group_phases
+        ]
+
+        frame_groups.append(
+            int(np.argmin(distances))
+        )
+
+    # Blank/low-information frames cannot always determine their
+    # own phase. Assign them to the nearest valid frame.
+    valid_indices = [
+        i for i, group_id in enumerate(frame_groups)
+        if group_id is not None
+    ]
+
+    if valid_indices:
+        for i, group_id in enumerate(frame_groups):
+            if group_id is not None:
+                continue
+
+            nearest = min(
+                valid_indices,
+                key=lambda j: abs(j - i),
+            )
+            frame_groups[i] = frame_groups[nearest]
+
+    frame_groups = [
+        0 if group_id is None else group_id
+        for group_id in frame_groups
+    ]
+
+    calibrations = {}
+
+    for group_id, group in enumerate(groups):
+        calibrations[group_id] = _build_cell_starts_from_phase(
+            group["phase"],
+            pitch,
+            image_width,
+        )
+
+    print(f"Calibration groups found : {len(calibrations)}")
+
+    for group_id, group in enumerate(groups):
+        frame_count = sum(
+            assigned_group == group_id
+            for assigned_group in frame_groups
+        )
+
+        print(
+            f"Group {group_id}: "
+            f"phase={group['phase']:.2f} px, "
+            f"frames={frame_count}, "
+            f"cells={len(calibrations[group_id])}"
+        )
+        print(
+            f"  Cell starts: {calibrations[group_id]}"
+        )
+
+    print("=" * 70)
+    print()
+
+    return {
+        "pitch": pitch,
+        "frame_phases": frame_phases,
+        "frame_groups": frame_groups,
+        "calibrations": calibrations,
+        "image_width": image_width,
+    }
+
+
+
 # ------------------------------------------------------------
 # SEGMENT SAMPLING
 # ------------------------------------------------------------
@@ -1057,13 +1420,18 @@ if __name__ == "__main__":
     print()
 
     # --------------------------------------------------------
-    # Automatically calibrate the horizontal character grid
-    # for the current dataset.
+    # Automatically detect one or more display geometries.
+    #
+    # The decoder does not assume that every frame in the folder
+    # has the same horizontal phase.
     # --------------------------------------------------------
 
-    cell_starts = calibrate_cell_starts(
+    calibration = calibrate_multiple_cell_starts(
         images
     )
+
+    frame_groups = calibration["frame_groups"]
+    calibrations = calibration["calibrations"]
 
     for index, image_path in enumerate(images, start=1):
 
@@ -1075,6 +1443,13 @@ if __name__ == "__main__":
                 "ERROR - could not read image"
             )
             continue
+
+        group_id = frame_groups[index - 1]
+
+        cell_starts = calibrations.get(
+            group_id,
+            CELL_STARTS,
+        )
 
         text = decode_text(
             image,

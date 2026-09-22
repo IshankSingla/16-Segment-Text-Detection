@@ -25,7 +25,7 @@ import cv2
 import numpy as np
 
 from segment_decoder import (
-    calibrate_cell_starts,
+    calibrate_multiple_cell_starts,
 )
 
 
@@ -212,7 +212,7 @@ def extract_cell(
         return None
 
     return mask[
-        0:CELL_HEIGHT,
+        0:min(CELL_HEIGHT, mask.shape[0]),
         x1:x2,
     ]
 
@@ -469,19 +469,23 @@ def main():
 
     # --------------------------------------------------------
     # IMPORTANT:
-    # Calibrate the current dataset.
+    # Detect one or more display geometries.
     #
-    # This must be identical to the calibration used
-    # when the templates were created.
+    # The template builder uses the same multi-calibration
+    # system, so every frame is decoded using the geometry
+    # appropriate for its dataset/alignment.
     # --------------------------------------------------------
 
-    cell_starts = calibrate_cell_starts(
+    calibration = calibrate_multiple_cell_starts(
         images
     )
 
+    frame_groups = calibration["frame_groups"]
+    calibrations = calibration["calibrations"]
+
     print(
-        f"Using {len(cell_starts)} "
-        f"calibrated character cells."
+        f"Using {len(calibrations)} "
+        f"automatic calibration group(s)."
     )
 
     print()
@@ -501,6 +505,13 @@ def main():
 
         if image is None:
             continue
+
+        group_id = frame_groups[frame_number - 1]
+
+        cell_starts = calibrations.get(
+            group_id,
+            [],
+        )
 
         text, confidences = (
             decode_frame(

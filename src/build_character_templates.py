@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from segment_decoder import (
-    calibrate_cell_starts,
+    calibrate_multiple_cell_starts,
     decode_frame,
 )
 
@@ -149,7 +149,7 @@ def extract_cell(
         return None
 
     return mask[
-        0:86,
+        0:mask.shape[0],
         x1:x2,
     ]
 
@@ -187,16 +187,23 @@ def main():
     print()
 
     # --------------------------------------------------------
-    # Calibrate current dataset
+    # Automatically detect one or more display geometries.
+    #
+    # A combined folder may contain datasets with different
+    # horizontal display alignment. Each frame is assigned to
+    # its automatically detected calibration group.
     # --------------------------------------------------------
 
-    cell_starts = calibrate_cell_starts(
+    calibration = calibrate_multiple_cell_starts(
         images
     )
 
+    frame_groups = calibration["frame_groups"]
+    calibrations = calibration["calibrations"]
+
     print(
-        f"Using {len(cell_starts)} calibrated "
-        f"character cells."
+        f"Using {len(calibrations)} automatic "
+        f"calibration group(s)."
     )
 
     print()
@@ -268,6 +275,13 @@ def main():
         # Use the same threshold that made the standalone
         # segment decoder work.
         # ----------------------------------------------------
+
+        group_id = frame_groups[frame_number - 1]
+
+        cell_starts = calibrations.get(
+            group_id,
+            [],
+        )
 
         results = decode_frame(
             image,
